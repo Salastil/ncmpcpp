@@ -2791,7 +2791,7 @@ void AddYoutubeDLItem::run()
 	// -f bestaudio/best: selects the best available audio-only stream, or
 	//                    alternatively the best audio+video stream
 	bp::ipstream output;
-	bp::child child_process(ydl_path, url, "-j", "-f", "bestaudio/best", bp::std_out > output,
+	bp::child child_process(ydl_path, url, "-j", "-f", "bestaudio/best", "--playlist-end", "100, bp::std_out > output,
 	                        bp::std_err > bp::null);
 
 	// extract the URL and metadata from a ptree object and add
