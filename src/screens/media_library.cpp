@@ -98,7 +98,7 @@ bool MoveToAlbum(NC::Menu<AlbumEntry> &albums, const std::string &primary_tag, c
 struct SortSongs {
 	typedef NC::Menu<MPD::Song>::Item SongItem;
 	
-	static const std::array<MPD::Song::GetFunction, 3> GetFuns;
+	static const std::array<MPD::Song::GetFunction, 4> GetFuns;
 	
 	LocaleStringComparison m_cmp;
 
@@ -117,26 +117,16 @@ public:
 				return ret < 0;
 		}
 
-		// Sort by track numbers.
-		try {
-			ret = boost::lexical_cast<int>(a.getTags(&MPD::Song::getTrackNumber))
-			    - boost::lexical_cast<int>(b.getTags(&MPD::Song::getTrackNumber));
-		} catch (boost::bad_lexical_cast &) {
-			ret = a.getTrackNumber().compare(b.getTrackNumber());
-		}
-		if (ret != 0)
-			return ret < 0;
-
-		// If track numbers are equal, sort by the display format.
 		return Format::stringify<char>(Config.song_library_format, &a)
 		     < Format::stringify<char>(Config.song_library_format, &b);
 	}
 };
 
-const std::array<MPD::Song::GetFunction, 3> SortSongs::GetFuns = {{
+const std::array<MPD::Song::GetFunction, 4> SortSongs::GetFuns = {{
 	&MPD::Song::getDate,
 	&MPD::Song::getAlbum,
-	&MPD::Song::getDisc
+	&MPD::Song::getDisc,
+	&MPD::Song::getTrackNumber,
 }};
 
 class SortAlbumEntries {
@@ -346,9 +336,9 @@ void MediaLibrary::update()
 			for (const auto &album : albums)
 			{
 				auto entry = AlbumEntry(
-					Album(std::move(std::get<0>(album.first)),
-					      std::move(std::get<1>(album.first)),
-					      std::move(std::get<2>(album.first)),
+					Album(std::get<0>(album.first),
+					      std::get<1>(album.first),
+					      std::get<2>(album.first),
 					      album.second));
 				if (idx < Albums.size())
 					Albums[idx].value() = std::move(entry);
@@ -445,8 +435,8 @@ void MediaLibrary::update()
 				{
 					auto entry = AlbumEntry(
 						Album(primary_tag,
-						      std::move(std::get<0>(album.first)),
-						      std::move(std::get<1>(album.first)),
+						      std::get<0>(album.first),
+						      std::get<1>(album.first),
 						      album.second));
 					if (idx < Albums.size())
 					{

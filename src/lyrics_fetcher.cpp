@@ -38,16 +38,8 @@ std::istream &operator>>(std::istream &is, LyricsFetcher_ &fetcher)
 {
 	std::string s;
 	is >> s;
-	if (s == "azlyrics")
-		fetcher = std::make_unique<AzLyricsFetcher>();
-	else if (s == "genius")
+	if (s == "genius")
 		fetcher = std::make_unique<GeniusFetcher>();
-	else if (s == "musixmatch")
-		fetcher = std::make_unique<MusixmatchFetcher>();
-	else if (s == "sing365")
-		fetcher = std::make_unique<Sing365Fetcher>();
-	else if (s == "metrolyrics")
-		fetcher = std::make_unique<MetrolyricsFetcher>();
 	else if (s == "justsomelyrics")
 		fetcher = std::make_unique<JustSomeLyricsFetcher>();
 	else if (s == "jahlyrics")
@@ -76,7 +68,7 @@ LyricsFetcher::Result LyricsFetcher::fetch(const std::string &artist,
 	std::string url = urlTemplate();
 	boost::replace_all(url, "%artist%", Curl::escape(artist));
 	boost::replace_all(url, "%title%", Curl::escape(title));
-	
+
 	std::string data;
 	CURLcode code = Curl::perform(data, url, "", true);
 	
@@ -88,9 +80,11 @@ LyricsFetcher::Result LyricsFetcher::fetch(const std::string &artist,
 
 	auto lyrics = getContent(regex(), data);
 
+	//std::cerr << "URL: " << url << "\n";
+	//std::cerr << "Data: " << data << "\n";
+
 	if (lyrics.empty() || notLyrics(data))
 	{
-		//std::cerr << "Data: " << data << "\n";
 		//std::cerr << "Empty: " << lyrics.empty() << "\n";
 		//std::cerr << "Not Lyrics: " << notLyrics(data) << "\n";
 		result.second = msgNotFound;
@@ -140,9 +134,11 @@ void LyricsFetcher::postProcess(std::string &data) const
 	boost::split(lines, data, boost::is_any_of("\n"));
 	for (auto &line : lines)
 		boost::trim(line);
-	std::unique(lines.begin(), lines.end(), [](std::string &a, std::string &b) {
-		return a.empty() && b.empty();
-	});
+	auto last = std::unique(
+		lines.begin(),
+		lines.end(),
+		[](std::string &a, std::string &b) { return a.empty() && b.empty(); });
+	lines.erase(last, lines.end());
 	data = boost::algorithm::join(lines, "\n");
 	boost::trim(data);
 }
@@ -198,14 +194,6 @@ LyricsFetcher::Result GoogleLyricsFetcher::fetch(const std::string &artist,
 bool GoogleLyricsFetcher::isURLOk(const std::string &url)
 {
 	return url.find(siteKeyword()) != std::string::npos;
-}
-
-/**********************************************************************/
-
-bool MetrolyricsFetcher::isURLOk(const std::string &url)
-{
-	// it sometimes return link to sitemap.xml, which is huge so we need to discard it
-	return GoogleLyricsFetcher::isURLOk(url) && url.find("sitemap") == std::string::npos;
 }
 
 /**********************************************************************/

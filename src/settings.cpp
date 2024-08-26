@@ -253,6 +253,7 @@ bool Configuration::read(const std::vector<std::string> &config_paths, bool igno
 			});
 	p.add("visualizer_autoscale", &visualizer_autoscale, "no", yes_no);
 	p.add("visualizer_spectrum_smooth_look", &visualizer_spectrum_smooth_look, "yes", yes_no);
+	p.add("visualizer_spectrum_smooth_look_legacy_chars", &visualizer_spectrum_smooth_look_legacy_chars, "yes", yes_no);
 	p.add("visualizer_spectrum_dft_size", &visualizer_spectrum_dft_size,
 			"2", [](std::string v) {
 			auto result = verbose_lexical_cast<size_t>(v);
@@ -277,6 +278,8 @@ bool Configuration::read(const std::vector<std::string> &config_paths, bool igno
 			lowerBoundCheck<double>(result, Config.visualizer_spectrum_hz_min+1);
 			return result;
 			});
+	p.add("visualizer_spectrum_log_scale_x", &visualizer_spectrum_log_scale_x, "yes", yes_no);
+	p.add("visualizer_spectrum_log_scale_y", &visualizer_spectrum_log_scale_y, "yes", yes_no);
 	p.add("visualizer_color", &visualizer_colors,
 	      "blue, cyan, green, yellow, magenta, red", list_of<NC::FormattedColor>);
 	p.add("system_encoding", &system_encoding, "", [](std::string encoding) {
@@ -458,9 +461,24 @@ bool Configuration::read(const std::vector<std::string> &config_paths, bool igno
 	p.add("titles_visibility", &titles_visibility, "yes", yes_no);
 	p.add("header_text_scrolling", &header_text_scrolling, "yes", yes_no);
 	p.add("cyclic_scrolling", &use_cyclic_scrolling, "no", yes_no);
-	p.add("lyrics_fetchers", &lyrics_fetchers,
-	      "azlyrics, genius, musixmatch, sing365, metrolyrics, justsomelyrics, jahlyrics, plyrics, tekstowo, zeneszoveg, internet",
-	      list_of<LyricsFetcher_>);
+	p.add<void>("lyrics_fetchers", nullptr,
+	      "genius, tekstowo, plyrics, justsomelyrics, jahlyrics, zeneszoveg, internet", [this](std::string v) {
+		      lyrics_fetchers = list_of<LyricsFetcher_>(v, [](std::string s) {
+			      LyricsFetcher_ fetcher;
+			      try {
+				      fetcher = boost::lexical_cast<LyricsFetcher_>(s);
+			      } catch (boost::bad_lexical_cast &) {
+				      std::clog << "Unknown lyrics fetcher: " << s << "\n";
+			      }
+			      return fetcher;
+		      });
+		      auto last = std::remove_if(
+			      lyrics_fetchers.begin(), lyrics_fetchers.end(),
+			      [](const auto &f) { return f.get() == nullptr; });
+		      lyrics_fetchers.erase(last, lyrics_fetchers.end());
+		      if (lyrics_fetchers.empty())
+			      invalid_value(v);
+	      });
 	p.add("follow_now_playing_lyrics", &now_playing_lyrics, "no", yes_no);
 	p.add("fetch_lyrics_for_current_song_in_background", &fetch_lyrics_in_background,
 	      "no", yes_no);

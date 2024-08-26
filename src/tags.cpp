@@ -123,12 +123,12 @@ void writeCommonTags(const MPD::MutableSong &s, TagLib::Tag *tag)
 	tag->setArtist(ToWString(s.getArtist()));
 	tag->setAlbum(ToWString(s.getAlbum()));
 	try {
-		tag->setYear(boost::lexical_cast<TagLib::uint>(s.getDate()));
+		tag->setYear(boost::lexical_cast<unsigned>(s.getDate()));
 	} catch (boost::bad_lexical_cast &) {
 		std::cerr << "writeCommonTags: couldn't write 'year' tag to '" << s.getURI() << "' as it's not a positive integer\n";
 	}
 	try {
-		tag->setTrack(boost::lexical_cast<TagLib::uint>(s.getTrack()));
+		tag->setTrack(boost::lexical_cast<unsigned>(s.getTrack()));
 	} catch (boost::bad_lexical_cast &) {
 		std::cerr << "writeCommonTags: couldn't write 'track' tag to '" << s.getURI() << "' as it's not a positive integer\n";
 	}
@@ -174,6 +174,7 @@ void writeID3v2Tags(const MPD::MutableSong &s, TagLib::ID3v2::Tag *tag)
 void writeXiphComments(const MPD::MutableSong &s, TagLib::Ogg::XiphComment *tag)
 {
 	auto writeXiph = [&](const TagLib::String &type, const TagLib::StringList &list) {
+		tag->removeFields(type);
 		for (auto it = list.begin(); it != list.end(); ++it)
 			tag->addField(type, *it, it == list.begin());
 	};
@@ -261,7 +262,7 @@ void read(mpd_song *s)
 	if (f.isNull())
 		return;
 	
-	setAttribute(s, "Time", boost::lexical_cast<std::string>(f.audioProperties()->length()));
+	setAttribute(s, "Time", boost::lexical_cast<std::string>(f.audioProperties()->lengthInSeconds()));
 	
 	if (auto mpeg_file = dynamic_cast<TagLib::MPEG::File *>(f.file()))
 	{
@@ -301,15 +302,9 @@ bool write(MPD::MutableSong &s)
 	if (f.isNull())
 		return false;
 	
-	bool saved = false;
 	if (auto mpeg_file = dynamic_cast<TagLib::MPEG::File *>(f.file()))
 	{
 		writeID3v2Tags(s, mpeg_file->ID3v2Tag(true));
-		// write id3v2.4 tags only
-		if (!mpeg_file->save(TagLib::MPEG::File::ID3v2, true, 4, false))
-			return false;
-		// do not call generic save() as it will duplicate tags
-		saved = true;
 	}
 	else if (auto vorbis_file = dynamic_cast<TagLib::Ogg::Vorbis::File *>(f.file()))
 	{
@@ -326,7 +321,7 @@ bool write(MPD::MutableSong &s)
 	else
 		writeCommonTags(s, f.tag());
 	
-	if (!saved && !f.save())
+	if (!f.save())
 		return false;
 
 	// TODO: move this somewhere else

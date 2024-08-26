@@ -1,15 +1,15 @@
-AC_INIT([ncmpcpp], [0.10_dev])
+AC_INIT([ncmpcpp],[0.10_dev])
 AC_CONFIG_SRCDIR([configure.ac])
 AC_CONFIG_HEADERS(config.h)
 AM_INIT_AUTOMAKE([subdir-objects])
 
 AC_CONFIG_MACRO_DIR([m4])
 
-AC_PREREQ(2.59)
+AC_PREREQ([2.71])
 
-AC_LANG_CPLUSPLUS
+AC_LANG([C++])
 AC_PROG_CXX
-AC_PROG_LIBTOOL
+LT_INIT
 
 AC_ARG_ENABLE(outputs, AS_HELP_STRING([--enable-outputs], [Enable outputs screen @<:@default=no@:>@]), [outputs=$enableval], [outputs=no])
 AC_ARG_ENABLE(visualizer, AS_HELP_STRING([--enable-visualizer], [Enable music visualizer screen @<:@default=no@:>@]), [visualizer=$enableval], [visualizer=no])
@@ -70,15 +70,15 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]])],
 )
 CXXFLAGS="$old_CXXFLAGS $fast_math"
 
-# -std=c++14
-AC_MSG_CHECKING([whether compiler supports -std=c++14])
+# -std=c++20
+AC_MSG_CHECKING([whether compiler supports -std=c++20])
 old_CXXFLAGS="$CXXFLAGS"
-CXXFLAGS="-std=c++14"
+CXXFLAGS="-std=c++20"
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]])],
 	AC_MSG_RESULT([yes])
-		std_cpp14="-std=c++14",
+		std_cpp14="-std=c++20",
 	AC_MSG_RESULT([no])
-		AC_MSG_ERROR([[Your compiler doesn't seem to support C++14, please upgrade (GCC >= 5)]])
+		AC_MSG_ERROR([[Your compiler doesn't seem to support C++20, please upgrade]])
 )
 CXXFLAGS="$old_CXXFLAGS $std_cpp14"
 
@@ -89,6 +89,9 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [[auto f = [](auto n) { return n*n; }; f(
 	AC_MSG_RESULT([no])
 		AC_MSG_ERROR([[Your compiler doesn't seem to support generic lambda expressions, please upgrade (GCC >= 5)]])
 )
+
+# warnings
+CXXFLAGS="$CXXFLAGS -Wall -Wextra -Wshadow -Wimplicit-fallthrough"
 
 # boost
 BOOST_REQUIRE([1.60])
@@ -149,7 +152,7 @@ PKG_CHECK_MODULES([ICU], [icu-i18n icu-uc], [
 	old_LIBS="$LIBS"
 	AC_SUBST(ICU_CFLAGS)
 	AC_SUBST(ICU_LIBS)
-	CPPFLAGS="$CPPFLAGS $ICU_CFLAGS -DU_USING_ICU_NAMESPACE=0"
+	CPPFLAGS="$CPPFLAGS $ICU_CFLAGS"
 	LIBS="$LIBS $ICU_LIBS"
 	AC_MSG_CHECKING([whether boost.regex was compiled with ICU support])
 	AC_LINK_IFELSE([AC_LANG_PROGRAM([
@@ -257,19 +260,30 @@ PKG_CHECK_MODULES([libcurl], [libcurl], [
 
 # taglib
 if test "$taglib" != "no" ; then
-	AC_PATH_PROG(TAGLIB_CONFIG, taglib-config)
-	if test "$TAGLIB_CONFIG" != "" ; then
-		CPPFLAGS="$CPPFLAGS `$TAGLIB_CONFIG --cflags`"
-		LIBS="$LIBS `$TAGLIB_CONFIG --libs`"
+	PKG_CHECK_MODULES([taglib], [taglib], [
+		AC_SUBST(taglib_CFLAGS)
+		AC_SUBST(taglib_LIBS)
+	], [
+		AC_PATH_PROG([TAGLIB_CONFIG], [taglib-config])
+		if test "$TAGLIB_CONFIG" != ""; then
+			taglib_CFLAGS=`$TAGLIB_CONFIG --cflags`
+			taglib_LIBS=`$TAGLIB_CONFIG --libs`
+		else
+			if test "$taglib" = "yes" ; then
+				AC_MSG_ERROR([could not find taglib.pc or taglib-config executable])
+			fi
+		fi
+	])
+
+	if test "$TAGLIB_CONFIG$taglib_LIBS" != "" ; then
+		CPPFLAGS="$CPPFLAGS $taglib_CFLAGS"
+		LIBS="$LIBS $taglib_LIBS"
+
 		AC_CHECK_HEADERS([taglib.h], ,
 			if test "$taglib" = "yes" ; then
 				AC_MSG_ERROR([missing taglib.h header])
 			fi
 		)
-	else
-		if test "$taglib" = "yes" ; then
-			AC_MSG_ERROR([taglib-config executable is missing])
-		fi
 	fi
 fi
 
