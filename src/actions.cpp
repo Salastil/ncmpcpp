@@ -2874,11 +2874,20 @@ void AddYoutubeDLItem::run()
         // extract the URL and metadata from a ptree object and add
         auto add_song = [&] (const pt::ptree& ptree) {
                 auto download_url = ptree.get_optional<std::string>("url");
-                if (!download_url.has_value())
-                        download_url = ptree.get_optional<std::string>("webpage_url");
+                auto webpage_url = ptree.get_optional<std::string>("webpage_url");
 
-                if (download_url.has_value() && download_url->find("://") == std::string::npos)
-                        download_url = resolve_stream_url(*download_url);
+                const bool has_protocol = ptree.get_optional<std::string>("protocol").has_value();
+
+                if (!has_protocol) {
+                        if (!download_url.has_value() && webpage_url.has_value())
+                                download_url = webpage_url;
+
+                        if (download_url.has_value())
+                                download_url = resolve_stream_url(*download_url);
+                }
+
+                if (!download_url.has_value())
+                        download_url = webpage_url;
 
                 if (!download_url.has_value() || download_url->find("://") == std::string::npos)
                         return 0;
