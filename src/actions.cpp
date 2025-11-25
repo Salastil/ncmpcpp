@@ -26,6 +26,7 @@
 #include <boost/filesystem/operations.hpp>
 #include <boost/locale/conversion.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/optional.hpp>
 #include <boost/property_tree/exceptions.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -2833,15 +2834,54 @@ void AddYoutubeDLItem::run()
                 return;
         }
 
+        auto resolve_stream_url = [&] (const std::string &source_url) -> boost::optional<std::string> {
+                std::string escaped_source = source_url;
+                escapeSingleQuotes(escaped_source);
+
+                std::string resolve_command = ydl_path + " -j -f bestaudio/best --no-playlist '" + escaped_source + "' 2>/dev/null";
+                FILE *resolve_pipe = popen(resolve_command.c_str(), "r");
+                if (!resolve_pipe) {
+                        return boost::none;
+                }
+
+                std::string resolved_json;
+                char resolve_buffer[4096];
+                while (fgets(resolve_buffer, sizeof(resolve_buffer), resolve_pipe))
+                        resolved_json.append(resolve_buffer);
+
+                int resolve_status = pclose(resolve_pipe);
+                if (resolve_status >= 0 && WIFEXITED(resolve_status) && WEXITSTATUS(resolve_status) != 0)
+                        return boost::none;
+
+                pt::ptree resolved_ptree;
+                try {
+                        std::istringstream resolved_stream(resolved_json);
+                        pt::read_json(resolved_stream, resolved_ptree);
+                } catch (pt::ptree_error &) {
+                        return boost::none;
+                }
+
+                auto resolved_url = resolved_ptree.get_optional<std::string>("url");
+                if (!resolved_url.has_value())
+                        resolved_url = resolved_ptree.get_optional<std::string>("webpage_url");
+
+                if (!resolved_url.has_value())
+                        return boost::none;
+
+                return resolved_url;
+        };
+
         // extract the URL and metadata from a ptree object and add
-        auto add_song = [] (const pt::ptree& ptree) {
+        auto add_song = [&] (const pt::ptree& ptree) {
                 auto download_url = ptree.get_optional<std::string>("url");
-                if (!download_url.has_value()) {
+                if (!download_url.has_value())
                         download_url = ptree.get_optional<std::string>("webpage_url");
-                }
-                if (!download_url.has_value()) {
+
+                if (download_url.has_value() && download_url->find("://") == std::string::npos)
+                        download_url = resolve_stream_url(*download_url);
+
+                if (!download_url.has_value() || download_url->find("://") == std::string::npos)
                         return 0;
-                }
 
                 auto title = ptree.get_optional<std::string>("title");
                 auto artist = ptree.get_optional<std::string>("creator");
