@@ -2768,7 +2768,7 @@ void AddYoutubeDLItem::run()
         using Global::wFooter;
         namespace pt = boost::property_tree;
 
-        auto find_executable = [] (const std::vector<std::string> &names) -> std::string {
+        auto find_executable = [] (const std::string &name) -> std::string {
                 const char *path_env = std::getenv("PATH");
                 if (!path_env)
                         return {};
@@ -2785,14 +2785,11 @@ void AddYoutubeDLItem::run()
                         dirs.push_back(dir);
                 }
 
-                for (const auto &name : names)
+                for (const auto &d : dirs)
                 {
-                        for (const auto &d : dirs)
-                        {
-                                std::string candidate = d + '/' + name;
-                                if (access(candidate.c_str(), X_OK) == 0)
-                                        return candidate;
-                        }
+                        std::string candidate = d + '/' + name;
+                        if (access(candidate.c_str(), X_OK) == 0)
+                                return candidate;
                 }
 
                 return {};
@@ -2801,7 +2798,7 @@ void AddYoutubeDLItem::run()
         std::string url;
         {
                 Statusbar::ScopedLock slock;
-                Statusbar::put() << "Add via yt-dlp: ";
+                Statusbar::put() << "Add via youtube-dl: ";
                 url = wFooter->prompt();
         }
 
@@ -2809,26 +2806,26 @@ void AddYoutubeDLItem::run()
         if (url.empty())
                 return;
 
-        // search the yt-dlp or youtube-dl executable in the PATH
-        auto ydl_path = find_executable({"yt-dlp", "youtube-dl"});
+        // search the youtube-dl executable in the PATH
+        auto ydl_path = find_executable("youtube-dl");
         if (ydl_path.empty()) {
-                Statusbar::print("yt-dlp / youtube-dl was not found in PATH");
+                Statusbar::print("youtube-dl was not found in PATH");
                 return;
         }
 
-        Statusbar::printf("Calling %1% with '%2%' ...", ydl_path, url);
+        Statusbar::printf("Calling youtube-dl with '%1%' ...", url);
 
-        // start yt-dlp in a child process
+        // start youtube-dl in a child process
         // -j: output as JSON, each playlist item on a separate line
         // -f bestaudio/best: selects the best available audio-only stream, or
         //                    alternatively the best audio+video stream
         std::string escaped_url = url;
         escapeSingleQuotes(escaped_url);
-        std::string command = ydl_path + " -j -f bestaudio/best --playlist-end 100 '" + escaped_url + "' 2>/dev/null";
+        std::string command = ydl_path + " '" + escaped_url + "' -j -f bestaudio/best --playlist-end 100 2>/dev/null";
 
         FILE *pipe = popen(command.c_str(), "r");
         if (!pipe) {
-                Statusbar::print("Failed to start yt-dlp");
+                Statusbar::print("Failed to start youtube-dl");
                 return;
         }
 
@@ -2866,10 +2863,11 @@ void AddYoutubeDLItem::run()
                         std::istringstream line_stream(json_line);
                         pt::read_json(line_stream, ptree);
                         num_songs_added += add_song(ptree);
-                        Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
                 } catch (pt::ptree_error &) {
-                        Statusbar::print("An error occurred while parsing the output of yt-dlp");
+                        Statusbar::print("An error occurred while parsing the output of youtube-dl");
+                        return;
                 }
+                Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
         };
 
         char buffer[4096];
@@ -2894,7 +2892,7 @@ void AddYoutubeDLItem::run()
         if (ec == 0) {
                 Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
         } else {
-                Statusbar::printf("Added %1% item(s) to playlist (yt-dlp exited with exit code %2%)", num_songs_added, ec);
+                Statusbar::printf("Added %1% item(s) to playlist (youtube-dl exited with exit code %2%)", num_songs_added, ec);
         }
 }
 
