@@ -21,20 +21,21 @@
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+#include <cstdlib>
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/locale/conversion.hpp>
 #include <boost/lexical_cast.hpp>
-#include <boost/process/child.hpp>
-#include <boost/process/io.hpp>
-#include <boost/process/pipe.hpp>
-#include <boost/process/search_path.hpp>
 #include <boost/property_tree/exceptions.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/ptree_fwd.hpp>
 #include <algorithm>
 #include <iostream>
+#include <cstdio>
+#include <sstream>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <mpd/tag.h>
 
 #include "actions.h"
@@ -2764,90 +2765,145 @@ bool AddYoutubeDLItem::canBeRun()
 
 void AddYoutubeDLItem::run()
 {
-	using Global::wFooter;
-	namespace bp = boost::process;
-	namespace pt = boost::property_tree;
+        using Global::wFooter;
+        namespace pt = boost::property_tree;
 
-	std::string url;
-	{
-		Statusbar::ScopedLock slock;
-		Statusbar::put() << "Add via youtube-dl: ";
-		url = wFooter->prompt();
-	}
+        auto find_executable = [] (const std::vector<std::string> &names) -> std::string {
+                const char *path_env = std::getenv("PATH");
+                if (!path_env)
+                        return {};
 
-	// do nothing if no url is given
-	if (url.empty())
-		return;
+                std::string path(path_env);
+                std::stringstream ss(path);
+                std::string dir;
 
-	// search the youtube-dl executable in the PATH
-	auto ydl_path = bp::search_path("youtube-dl");
-	if (ydl_path.empty()) {
-		Statusbar::print("youtube-dl was not found in PATH");
-		return;
-	}
+                std::vector<std::string> dirs;
+                while (std::getline(ss, dir, ':'))
+                {
+                        if (dir.empty())
+                                dir = ".";
+                        dirs.push_back(dir);
+                }
 
-	Statusbar::printf("Calling youtube-dl with '%1%' ...", url);
+                for (const auto &name : names)
+                {
+                        for (const auto &d : dirs)
+                        {
+                                std::string candidate = d + '/' + name;
+                                if (access(candidate.c_str(), X_OK) == 0)
+                                        return candidate;
+                        }
+                }
 
-	// start youtube-dl in a child process
-	// -j: output as JSON, each playlist item on a separate line
-	// -f bestaudio/best: selects the best available audio-only stream, or
-	//                    alternatively the best audio+video stream
-	bp::ipstream output;
-	bp::child child_process(ydl_path, url, "-j", "-f", "bestaudio/best", "--playlist-end", "100", bp::std_out > output,
-	                        bp::std_err > bp::null);
+                return {};
+        };
 
-	// extract the URL and metadata from a ptree object and add
-	auto add_song = [] (const pt::ptree& ptree) {
-		auto download_url = ptree.get<std::string>("url");
-		auto title = ptree.get_optional<std::string>("title");
-		auto artist = ptree.get_optional<std::string>("creator");
-		if (!artist.has_value()) {
-			artist = ptree.get_optional<std::string>("uploader");
-		}
-		auto album = ptree.get_optional<std::string>("album");
-		auto id = Mpd.AddSong(download_url);
-		if (id == -1) {
-			return 0;
-		}
-		if (title.has_value()) {
-			Mpd.AddTag(id, MPD_TAG_TITLE, *title);
-		}
-		if (artist.has_value()) {
-			Mpd.AddTag(id, MPD_TAG_ARTIST, *artist);
-		}
-		if (album.has_value()) {
-			Mpd.AddTag(id, MPD_TAG_ALBUM, *album);
-		}
-		return 1;
-	};
+        std::string url;
+        {
+                Statusbar::ScopedLock slock;
+                Statusbar::put() << "Add via yt-dlp: ";
+                url = wFooter->prompt();
+        }
 
-	std::string line;
-	pt::ptree ptree;
-	unsigned num_songs_added = 0;
+        // do nothing if no url is given
+        if (url.empty())
+                return;
 
-	while (std::getline(output, line)) {
-		try {
-			std::istringstream line_stream(line);
-			pt::read_json(line_stream, ptree);
-			num_songs_added += add_song(ptree);
-		} catch (pt::ptree_error &e) {
-			Statusbar::print("An error occurred while parsing the output of youtube-dl");
-			continue;
-		}
-		Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
-	}
+        // search the yt-dlp or youtube-dl executable in the PATH
+        auto ydl_path = find_executable({"yt-dlp", "youtube-dl"});
+        if (ydl_path.empty()) {
+                Statusbar::print("yt-dlp / youtube-dl was not found in PATH");
+                return;
+        }
 
-	if (child_process.running()) {
-		child_process.terminate();
-	}
-	child_process.wait();
+        Statusbar::printf("Calling %1% with '%2%' ...", ydl_path, url);
 
-	auto ec = child_process.exit_code();
-	if (ec == 0) {
-		Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
-	} else {
-		Statusbar::printf("Added %1% item(s) to playlist (youtube-dl exited with exit code %2%)", num_songs_added, ec);
-	}
+        // start yt-dlp in a child process
+        // -j: output as JSON, each playlist item on a separate line
+        // --flat-playlist: quickly list items without resolving URLs up front
+        // -f bestaudio/best: selects the best available audio-only stream, or
+        //                    alternatively the best audio+video stream
+        std::string escaped_url = url;
+        escapeSingleQuotes(escaped_url);
+        std::string command = ydl_path + " -j --flat-playlist -f bestaudio/best --playlist-end 100 '" + escaped_url + "' 2>/dev/null";
+
+        FILE *pipe = popen(command.c_str(), "r");
+        if (!pipe) {
+                Statusbar::print("Failed to start yt-dlp");
+                return;
+        }
+
+        // extract the URL and metadata from a ptree object and add
+        auto add_song = [] (const pt::ptree& ptree) {
+                auto download_url = ptree.get_optional<std::string>("url");
+                if (!download_url.has_value()) {
+                        download_url = ptree.get_optional<std::string>("webpage_url");
+                }
+                if (!download_url.has_value()) {
+                        return 0;
+                }
+
+                auto title = ptree.get_optional<std::string>("title");
+                auto artist = ptree.get_optional<std::string>("creator");
+                if (!artist.has_value()) {
+                        artist = ptree.get_optional<std::string>("uploader");
+                }
+                auto album = ptree.get_optional<std::string>("album");
+                auto id = Mpd.AddSong(*download_url);
+                if (id == -1) {
+                        return 0;
+                }
+                if (title.has_value()) {
+                        Mpd.AddTag(id, MPD_TAG_TITLE, *title);
+                }
+                if (artist.has_value()) {
+                        Mpd.AddTag(id, MPD_TAG_ARTIST, *artist);
+                }
+                if (album.has_value()) {
+                        Mpd.AddTag(id, MPD_TAG_ALBUM, *album);
+                }
+                return 1;
+        };
+
+        std::string line;
+        pt::ptree ptree;
+        unsigned num_songs_added = 0;
+
+        auto process_line = [&] (const std::string &json_line) {
+                try {
+                        std::istringstream line_stream(json_line);
+                        pt::read_json(line_stream, ptree);
+                        num_songs_added += add_song(ptree);
+                        Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
+                } catch (pt::ptree_error &) {
+                        Statusbar::print("An error occurred while parsing the output of yt-dlp");
+                }
+        };
+
+        char buffer[4096];
+        while (fgets(buffer, sizeof(buffer), pipe))
+        {
+                line.append(buffer);
+                if (!line.empty() && line.back() == '\n')
+                {
+                        line.pop_back();
+                        process_line(line);
+                        line.clear();
+                }
+        }
+        if (!line.empty())
+                process_line(line);
+
+        int raw_status = pclose(pipe);
+        int ec = raw_status;
+        if (raw_status >= 0 && WIFEXITED(raw_status))
+                ec = WEXITSTATUS(raw_status);
+
+        if (ec == 0) {
+                Statusbar::printf("Added %1% item(s) to playlist", num_songs_added);
+        } else {
+                Statusbar::printf("Added %1% item(s) to playlist (yt-dlp exited with exit code %2%)", num_songs_added, ec);
+        }
 }
 
 }

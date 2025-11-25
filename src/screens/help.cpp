@@ -255,10 +255,10 @@ void write_bindings(NC::Scrollpad &w)
 	key(w, Type::SavePlaylist, "Save playlist");
 	key(w, Type::Shuffle, "Shuffle range");
 	key(w, Type::SortPlaylist, "Sort range");
-	key(w, Type::ReversePlaylist, "Reverse range");
-	key(w, Type::JumpToPlayingSong, "Jump to current song");
-	key(w, Type::TogglePlayingSongCentering, "Toggle playing song centering");
-	key(w, Type::AddYoutubeDLItem, "Add items via youtube-dl");
+        key(w, Type::ReversePlaylist, "Reverse range");
+        key(w, Type::JumpToPlayingSong, "Jump to current song");
+        key(w, Type::TogglePlayingSongCentering, "Toggle playing song centering");
+        key(w, Type::AddYoutubeDLItem, "Add items via yt-dlp / youtube-dl");
 
 	key_section(w, "Browser");
 	key(w, Type::EnterDirectory, "Enter directory");
