@@ -2806,22 +2806,26 @@ void AddYoutubeDLItem::run()
         if (url.empty())
                 return;
 
-        // search the youtube-dl executable in the PATH
-        auto ydl_path = find_executable("youtube-dl");
+        // search the yt-dlp/youtube-dl executable in the PATH (prefer yt-dlp)
+        auto ydl_path = find_executable("yt-dlp");
+        if (ydl_path.empty())
+                ydl_path = find_executable("youtube-dl");
+
         if (ydl_path.empty()) {
-                Statusbar::print("youtube-dl was not found in PATH");
+                Statusbar::print("yt-dlp (or youtube-dl) was not found in PATH");
                 return;
         }
 
-        Statusbar::printf("Calling youtube-dl with '%1%' ...", url);
+        Statusbar::printf("Calling yt-dlp with '%1%' ...", url);
 
-        // start youtube-dl in a child process
+        // start yt-dlp in a child process
         // -j: output as JSON, each playlist item on a separate line
+        // --no-flat-playlist: ensure streaming URLs are included per entry
         // -f bestaudio/best: selects the best available audio-only stream, or
         //                    alternatively the best audio+video stream
         std::string escaped_url = url;
         escapeSingleQuotes(escaped_url);
-        std::string command = ydl_path + " '" + escaped_url + "' -j -f bestaudio/best --playlist-end 100 2>/dev/null";
+        std::string command = ydl_path + " '" + escaped_url + "' -j --no-flat-playlist -f bestaudio/best 2>/dev/null";
 
         FILE *pipe = popen(command.c_str(), "r");
         if (!pipe) {
