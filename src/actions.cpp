@@ -2834,35 +2834,59 @@ void AddYoutubeDLItem::run()
         }
 
 	// extract the URL and metadata from a ptree object and add
-	auto add_song = [] (const pt::ptree& ptree) {
-		auto download_url = ptree.get_optional<std::string>("requested_formats.0.url");
-		if (!download_url) {
-			download_url = ptree.get_optional<std::string>("url");
-		}
-		if (!download_url) {
-			return 0;
-		}
-		auto title = ptree.get_optional<std::string>("title");
-		auto artist = ptree.get_optional<std::string>("creator");
-		if (!artist.has_value()) {
-			artist = ptree.get_optional<std::string>("uploader");
-		}
-		auto album = ptree.get_optional<std::string>("album");
-		auto id = Mpd.AddSong(*download_url);
-		if (id == -1) {
-			return 0;
-		}
-		if (title.has_value()) {
-			Mpd.AddTag(id, MPD_TAG_TITLE, *title);
-		}
-		if (artist.has_value()) {
-			Mpd.AddTag(id, MPD_TAG_ARTIST, *artist);
-		}
-		if (album.has_value()) {
-			Mpd.AddTag(id, MPD_TAG_ALBUM, *album);
-		}
-		return 1;
-	};
+        auto add_song = [] (const pt::ptree& ptree) {
+                std::string final_url;
+
+                if (auto requested_formats = ptree.get_child_optional("requested_formats")) {
+                        for (auto &format : *requested_formats) {
+                                if (auto url = format.second.get_optional<std::string>("url")) {
+                                        final_url = *url;
+                                        break;
+                                }
+                        }
+                }
+
+                if (final_url.empty()) {
+                        if (auto formats = ptree.get_child_optional("formats")) {
+                                for (auto &format : *formats) {
+                                        auto acodec = format.second.get<std::string>("acodec", "");
+                                        auto vcodec = format.second.get<std::string>("vcodec", "");
+
+                                        if (vcodec == "none" && !acodec.empty()) {
+                                                if (auto url = format.second.get_optional<std::string>("url")) {
+                                                        final_url = *url;
+                                                        break;
+                                                }
+                                        }
+                                }
+                        }
+                }
+
+                if (final_url.empty()) {
+                        return 0;
+                }
+
+                auto title = ptree.get_optional<std::string>("title");
+                auto artist = ptree.get_optional<std::string>("creator");
+                if (!artist.has_value()) {
+                        artist = ptree.get_optional<std::string>("uploader");
+                }
+                auto album = ptree.get_optional<std::string>("album");
+                auto id = Mpd.AddSong(final_url);
+                if (id == -1) {
+                        return 0;
+                }
+                if (title.has_value()) {
+                        Mpd.AddTag(id, MPD_TAG_TITLE, *title);
+                }
+                if (artist.has_value()) {
+                        Mpd.AddTag(id, MPD_TAG_ARTIST, *artist);
+                }
+                if (album.has_value()) {
+                        Mpd.AddTag(id, MPD_TAG_ALBUM, *album);
+                }
+                return 1;
+        };
 
         std::string line;
         pt::ptree ptree;
