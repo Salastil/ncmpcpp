@@ -1,8 +1,12 @@
-# NCurses Music Player Client (Plus Plus)
+# NCurses Music Player Client (Plus Plus) (Plus yt-dlp)
 
 ## ncmpcpp – featureful ncurses based MPD client inspired by ncmpc
 
-### Project status
+### yt-dlp fork
+
+This fork allows adding items with yt-dlp via shift+d at the playlist screen, add a single item or a playlist (with a cap of 100 items) 
+
+## Project status
 
 The project is officially in maintenance mode. I (Andrzej Rybczak) still use it
 daily, but it's feature complete for me and there is very limited time I have
